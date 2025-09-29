@@ -8,7 +8,10 @@ import (
 	"github.com/curtiscovington/ssa-names/internal/cli"
 )
 
+var version = "dev"
+
 func main() {
+	cli.Version = version
 	app := cli.NewApp(dataset.Files, os.Stdout, os.Stderr)
 	if err := app.Run(os.Args[1:]); err != nil {
 		log.Fatal(err)

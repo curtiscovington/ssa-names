@@ -227,3 +227,26 @@ func TestAppGenerateMultiple(t *testing.T) {
 		t.Fatalf("expected no stderr output, got %q", stderr.String())
 	}
 }
+
+func TestAppVersionCommand(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	oldVersion := cli.Version
+	t.Cleanup(func() {
+		cli.Version = oldVersion
+	})
+	cli.Version = "v1.2.3"
+	app := cli.NewApp(sampleFS(), stdout, stderr)
+
+	if err := app.Run([]string{"--version"}); err != nil {
+		t.Fatalf("Run version: %v", err)
+	}
+
+	if got := strings.TrimSpace(stdout.String()); got != "names v1.2.3" {
+		t.Fatalf("unexpected version output: %q", got)
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr output, got %q", stderr.String())
+	}
+}
