@@ -1,0 +1,56 @@
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure tag points to main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor $(git rev-parse origin/main) "$GITHUB_SHA"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build release binaries
+        run: |
+          mkdir -p dist
+          for os in linux darwin windows; do
+            for arch in amd64 arm64; do
+              suffix=""
+              [ "$os" = "windows" ] && suffix=".exe"
+              GOOS=$os GOARCH=$arch go build -ldflags "-X main.version=${GITHUB_REF_NAME}" -o "dist/names-${os}-${arch}${suffix}" ./cmd/names
+            done
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: names-${{ github.ref_name }}
+          path: dist/*
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

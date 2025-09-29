@@ -15,6 +15,9 @@ import (
 	"github.com/curtiscovington/ssa-names/internal/visualize"
 )
 
+// Version is the semantic version of the CLI binary and is overridden at build time.
+var Version = "dev"
+
 // App wraps the command-line interface logic so it can be reused in tests.
 type App struct {
 	Dataset fs.FS
@@ -29,6 +32,14 @@ func NewApp(dataset fs.FS, stdout, stderr io.Writer) *App {
 
 // Run dispatches to the appropriate sub-command based on the provided args.
 func (a *App) Run(args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "version", "--version", "-v":
+			a.printVersion()
+			return nil
+		}
+	}
+
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return a.runTop(args)
 	}
@@ -46,6 +57,14 @@ func (a *App) Run(args []string) error {
 		a.printUsage()
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
+}
+
+func (a *App) printVersion() {
+	version := strings.TrimSpace(Version)
+	if version == "" {
+		version = "dev"
+	}
+	fmt.Fprintf(a.Stdout, "names %s\n", version)
 }
 
 func (a *App) runTop(args []string) error {
