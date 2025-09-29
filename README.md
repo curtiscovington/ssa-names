@@ -1,4 +1,4 @@
-# namesdatascience CLI
+# ssa-names CLI
 
 This repository includes a Go command-line tool that works with the `namesbystate` dataset. The dataset is compiled into the binary, so no additional files are required when running the tool.
 
