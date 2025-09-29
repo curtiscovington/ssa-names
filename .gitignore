@@ -1,0 +1,14 @@
+# Build artifacts
+/names
+*.exe
+*.out
+*.test
+
+# Generated SVG files
+*.svg 
+
+# Go toolchain cache directories
+bin/
+
+# macOS metadata
+.DS_Store
