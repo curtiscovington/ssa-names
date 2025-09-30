@@ -14,18 +14,19 @@ go build ./cmd/names
 
 ```sh
 ./names -state CA -year 2015 -gender F -top 5
+./names -year 2018-2020 -gender F -top 5
 ./names -state CA -year 2015 -gender F -name Olivia
 ```
 
 Flags:
 
-- `-state`: required two-letter state abbreviation.
-- `-year`: optional year filter (0 means all years).
+- `-state`: optional two-letter state abbreviation (omit for national totals).
+- `-year`: optional year filter (comma-separated list or `start-end` range; `0` or empty means all years).
 - `-gender`: optional gender filter (`M`, `F`, or leave empty).
 - `-top`: number of names to display (minimum 1).
 - `-name`: specific name to report rank for (requires `-year`).
 
-The command prints the most popular names for the chosen filters. When `-name` is provided, it additionally reports that name's rank and occurrence count for the same filters.
+The command prints the most popular names for the chosen filters. Omitting `-state` aggregates results across the entire United States. When `-year` is blank or `0`, the command considers the full dataset; otherwise it accepts individual years (`2019`), comma-separated lists (`2018,2020,2022`), and inclusive ranges (`2015-2019`). When `-name` is provided, it additionally reports that name's rank and occurrence count for the same filters.
 
 Sample run:
 

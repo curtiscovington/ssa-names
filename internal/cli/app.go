@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"math/rand"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,12 +69,136 @@ func (a *App) printVersion() {
 	fmt.Fprintf(a.Stdout, "names %s\n", version)
 }
 
+type yearFilter struct {
+	all   bool
+	years map[int]struct{}
+}
+
+func parseYearFilter(raw string) (yearFilter, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "0" {
+		return yearFilter{all: true}, nil
+	}
+
+	result := yearFilter{years: make(map[int]struct{})}
+	parts := strings.Split(trimmed, ",")
+	for _, part := range parts {
+		segment := strings.TrimSpace(part)
+		if segment == "" {
+			return yearFilter{}, errors.New("invalid year value: empty segment")
+		}
+		if segment == "0" {
+			return yearFilter{all: true}, nil
+		}
+
+		if strings.Contains(segment, "-") {
+			rangeParts := strings.Split(segment, "-")
+			if len(rangeParts) != 2 {
+				return yearFilter{}, fmt.Errorf("invalid year range: %s", segment)
+			}
+
+			start, err := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
+			if err != nil {
+				return yearFilter{}, fmt.Errorf("invalid year in range %q: %w", rangeParts[0], err)
+			}
+			end, err := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
+			if err != nil {
+				return yearFilter{}, fmt.Errorf("invalid year in range %q: %w", rangeParts[1], err)
+			}
+			if start <= 0 || end <= 0 {
+				return yearFilter{}, errors.New("year ranges must be positive")
+			}
+			if end < start {
+				return yearFilter{}, fmt.Errorf("invalid year range: %s", segment)
+			}
+
+			for year := start; year <= end; year++ {
+				result.years[year] = struct{}{}
+			}
+			continue
+		}
+
+		year, err := strconv.Atoi(segment)
+		if err != nil {
+			return yearFilter{}, fmt.Errorf("invalid year value %q: %w", segment, err)
+		}
+		if year <= 0 {
+			return yearFilter{}, errors.New("year must be positive")
+		}
+		result.years[year] = struct{}{}
+	}
+
+	if len(result.years) == 0 {
+		return yearFilter{}, errors.New("no valid years provided")
+	}
+
+	return result, nil
+}
+
+func (f yearFilter) All() bool {
+	return f.all
+}
+
+func (f yearFilter) Contains(year int) bool {
+	if f.all {
+		return true
+	}
+	_, ok := f.years[year]
+	return ok
+}
+
+func (f yearFilter) String() string {
+	if f.all {
+		return ""
+	}
+	years := make([]int, 0, len(f.years))
+	for year := range f.years {
+		years = append(years, year)
+	}
+	sort.Ints(years)
+
+	segments := make([]string, 0)
+	for i := 0; i < len(years); {
+		start := years[i]
+		end := start
+		j := i + 1
+		for j < len(years) && years[j] == end+1 {
+			end = years[j]
+			j++
+		}
+		segments = append(segments, formatYearSegment(start, end))
+		i = j
+	}
+
+	return strings.Join(segments, ", ")
+}
+
+func formatYearSegment(start, end int) string {
+	if start == end {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d-%d", start, end)
+}
+
+func filterRecordsByYear(records []namesdata.Record, filter yearFilter) []namesdata.Record {
+	if filter.All() {
+		return records
+	}
+	filtered := make([]namesdata.Record, 0, len(records))
+	for _, record := range records {
+		if filter.Contains(record.Year) {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
+
 func (a *App) runTop(args []string) error {
 	fs := flag.NewFlagSet("names", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
 
-	state := fs.String("state", "", "two-letter state abbreviation (e.g. CA)")
-	year := fs.Int("year", 0, "specific year to filter on (0 for all years)")
+	state := fs.String("state", "", "optional two-letter state abbreviation (e.g. CA)")
+	year := fs.String("year", "", "specific year or range to filter on (comma-separated or range, 0 for all years)")
 	gender := fs.String("gender", "", "filter by gender (M, F, or leave empty for both)")
 	topN := fs.Int("top", 10, "number of names to display")
 	name := fs.String("name", "", "specific name to report rank for (requires -year)")
@@ -82,35 +208,52 @@ func (a *App) runTop(args []string) error {
 		return err
 	}
 
-	if strings.TrimSpace(*state) == "" {
-		return errors.New("-state is required")
+	yearFilter, err := parseYearFilter(*year)
+	if err != nil {
+		return err
 	}
 
 	if *topN < 1 {
 		return errors.New("-top must be 1 or greater")
 	}
 
-	if strings.TrimSpace(*name) != "" && *year == 0 {
+	if strings.TrimSpace(*name) != "" && yearFilter.All() {
 		return errors.New("-year must be set when using -name")
 	}
 
-	records, err := namesdata.LoadStateRecords(a.Dataset, *state)
+	trimmedState := strings.TrimSpace(*state)
+
+	var records []namesdata.Record
+	if trimmedState == "" {
+		records, err = namesdata.LoadAllRecords(a.Dataset)
+	} else {
+		records, err = namesdata.LoadStateRecords(a.Dataset, trimmedState)
+	}
 	if err != nil {
 		return err
 	}
 
-	aggregated, ranks := namesdata.AggregateNames(records, *year, *gender)
+	filteredRecords := filterRecordsByYear(records, yearFilter)
+
+	aggregated, ranks := namesdata.AggregateNames(filteredRecords, 0, *gender)
 
 	format, err := parseOutputFormat(*formatFlag)
 	if err != nil {
 		return err
 	}
 
-	metadata := map[string]string{
-		"state": strings.ToUpper(strings.TrimSpace(*state)),
+	metadata := map[string]string{}
+
+	metadataState := strings.ToUpper(trimmedState)
+	displayLocation := metadataState
+	if trimmedState == "" {
+		metadataState = "NATIONAL"
+		displayLocation = "the United States"
 	}
-	if *year != 0 {
-		metadata["year"] = fmt.Sprintf("%d", *year)
+	metadata["state"] = metadataState
+
+	if desc := yearFilter.String(); desc != "" {
+		metadata["year"] = desc
 	}
 	if trimmed := strings.TrimSpace(*gender); trimmed != "" {
 		metadata["gender"] = strings.ToUpper(trimmed)
@@ -133,9 +276,9 @@ func (a *App) runTop(args []string) error {
 		if err != nil {
 			return err
 		}
-		rankLine := fmt.Sprintf("%s ranks #%d in %s", entry.Name, rank, strings.ToUpper(*state))
-		if *year != 0 {
-			rankLine += fmt.Sprintf(" for %d", *year)
+		rankLine := fmt.Sprintf("%s ranks #%d in %s", entry.Name, rank, displayLocation)
+		if desc := yearFilter.String(); desc != "" {
+			rankLine += fmt.Sprintf(" for %s", desc)
 		}
 		if strings.TrimSpace(*gender) != "" {
 			rankLine += fmt.Sprintf(" (%s)", strings.ToUpper(*gender))
@@ -153,9 +296,9 @@ func (a *App) runTop(args []string) error {
 		topNames = topNames[:*topN]
 	}
 
-	title := fmt.Sprintf("Top %d names in %s", len(topNames), strings.ToUpper(*state))
-	if *year != 0 {
-		title += fmt.Sprintf(" for %d", *year)
+	title := fmt.Sprintf("Top %d names in %s", len(topNames), displayLocation)
+	if desc := yearFilter.String(); desc != "" {
+		title += fmt.Sprintf(" for %s", desc)
 	}
 	if strings.TrimSpace(*gender) != "" {
 		title += fmt.Sprintf(" (%s)", strings.ToUpper(*gender))
