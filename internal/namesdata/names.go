@@ -459,7 +459,7 @@ func RandomNameFromFS(fsys fs.FS, state string, year int, gender string, r *rand
 			return nil
 		}
 
-		if rng.Float64()*float64(total) < float64(rec.Count) {
+		if rng.Float64() < float64(rec.Count)/float64(total) {
 			candidate = rec.Name
 		}
 		return nil
