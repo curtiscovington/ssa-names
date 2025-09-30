@@ -74,6 +74,46 @@ func TestAppTopJSON(t *testing.T) {
 	}
 }
 
+func TestAppTopNationalYearRangeJSON(t *testing.T) {
+	fs := sampleFS()
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	app := cli.NewApp(fs, stdout, stderr)
+
+	if err := app.Run([]string{"--year", "2018-2019", "--gender", "F", "--format", "json", "--top", "2"}); err != nil {
+		t.Fatalf("Run top national range json: %v", err)
+	}
+
+	var payload jsonOutput
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal json: %v\n%s", err, stdout.String())
+	}
+
+	if payload.Metadata["state"] != "NATIONAL" {
+		t.Fatalf("expected state metadata NATIONAL, got %q", payload.Metadata["state"])
+	}
+
+	if payload.Metadata["year"] != "2018-2019" {
+		t.Fatalf("expected year metadata 2018-2019, got %q", payload.Metadata["year"])
+	}
+
+	if len(payload.Rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(payload.Rows))
+	}
+
+	if payload.Rows[0]["Name"] != "Olivia" || payload.Rows[0]["Count"] != "280" {
+		t.Fatalf("unexpected first row: %+v", payload.Rows[0])
+	}
+
+	if payload.Rows[1]["Name"] != "Emma" || payload.Rows[1]["Count"] != "185" {
+		t.Fatalf("unexpected second row: %+v", payload.Rows[1])
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr output, got %q", stderr.String())
+	}
+}
+
 func TestAppTrendJSONSharePlot(t *testing.T) {
 	fs := sampleFS()
 	stdout := &bytes.Buffer{}
